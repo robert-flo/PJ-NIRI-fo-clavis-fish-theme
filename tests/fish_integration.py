@@ -16,13 +16,14 @@ import time
 from pathlib import Path
 
 
-ARROW = "".encode()
+HISTORY_ARROW = "".encode()
+INPUT_ARROW = "".encode()
 TIME = "".encode()
 CAP = "".encode()
 DURATION = "󰔚".encode()
 MARKER = b"CLAVIS_FISH_PTY_MARKER"
-ERROR_ARROW = b"\x1b[38;2;255;218;214m" + ARROW
-SUCCESS_ARROW = b"\x1b[38;2;192;199;213m" + ARROW
+ERROR_ARROW = b"\x1b[38;2;255;218;214m" + INPUT_ARROW
+SUCCESS_ARROW = b"\x1b[38;2;192;199;213m" + INPUT_ARROW
 
 
 def read_until(fd: int, marker: bytes, timeout: float = 8.0) -> bytes:
@@ -70,21 +71,35 @@ def main() -> int:
         try:
             initial = read_until(fd, b"> ")
             send(fd, "clavis-fish-theme init fish | source\n")
-            initialized = read_until(fd, ARROW)
+            initialized = read_until(fd, INPUT_ARROW)
             if CAP not in initialized:
                 raise AssertionError(f"capsule prompt was not installed: {initialized!r}")
+            if "╭─ ".encode() not in initialized or "╰─ ".encode() not in initialized:
+                raise AssertionError(f"folded prompt frame was not restored: {initialized!r}")
             if DURATION in initialized:
                 raise AssertionError(f"initial prompt displayed duration: {initialized!r}")
 
             # A command submitted after transient mode is enabled should leave
             # a transient arrow/time record before its output and then return a
-            # normal two-line prompt.
+            # normal framed prompt.
             send(fd, "printf 'CLAVIS_FISH_PTY_MARKER\\n'\n")
-            history = read_until(fd, MARKER) + read_until(fd, ARROW)
+            history = read_until(fd, MARKER) + read_until(fd, INPUT_ARROW)
             if TIME not in history:
                 raise AssertionError(f"transient time was not rendered: {history!r}")
+            if HISTORY_ARROW not in history:
+                raise AssertionError(f"transient arrow was not rendered: {history!r}")
             if MARKER not in history:
                 raise AssertionError("submitted command output disappeared")
+            after_marker = history.split(MARKER, 1)[1]
+            top_frame = "╭─ ".encode()
+            if top_frame not in after_marker:
+                raise AssertionError(f"next full prompt frame is missing: {history!r}")
+            before_top_frame = after_marker.split(top_frame, 1)[0]
+            # Interactive Fish emits cursor-control bytes while finalizing the
+            # transient prompt, so count physical line endings instead of
+            # requiring two adjacent CRLF sequences.
+            if before_top_frame.count(b"\n") < 2:
+                raise AssertionError(f"missing blank line before full prompt: {history!r}")
 
             send(fd, "false\n")
             failed = read_until(fd, ERROR_ARROW)
@@ -99,13 +114,13 @@ def main() -> int:
                 raise AssertionError(f"duration was not shown after a command: {succeeded!r}")
 
             send(fd, "clavis-fish-theme init fish | source\n")
-            repeated = read_until(fd, ARROW)
+            repeated = read_until(fd, INPUT_ARROW)
             if CAP not in repeated:
                 raise AssertionError("repeated source removed the prompt")
 
             send(fd, "functions --handlers fish_postexec\n")
             handlers = read_until(fd, b"__clavis_fish_theme_mark_command")
-            handlers += read_until(fd, ARROW)
+            handlers += read_until(fd, INPUT_ARROW)
             if handlers.count(b"__clavis_fish_theme_mark_command") != 1:
                 raise AssertionError(f"duplicate event handlers: {handlers!r}")
 

@@ -31,10 +31,11 @@ pub struct Modules {
     pub time: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LayoutConfig {
     pub left_margin: usize,
     pub right_margin: usize,
+    pub path_max_width: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -58,6 +59,7 @@ const DEFAULT_ERROR_BACKGROUND: Color = Color::rgb(0x93, 0x00, 0x0a);
 const DEFAULT_ERROR_FOREGROUND: Color = Color::rgb(0xff, 0xda, 0xd6);
 const DEFAULT_CONNECTOR: Color = Color::rgb(0x91, 0x90, 0x92);
 const DEFAULT_ARROW: Color = Color::rgb(0xc0, 0xc7, 0xd5);
+const DEFAULT_PATH_MAX_WIDTH: usize = 40;
 
 impl Default for Palette {
     fn default() -> Self {
@@ -100,6 +102,16 @@ impl Default for Modules {
             language: true,
             duration: true,
             time: true,
+        }
+    }
+}
+
+impl Default for LayoutConfig {
+    fn default() -> Self {
+        Self {
+            left_margin: 0,
+            right_margin: 0,
+            path_max_width: DEFAULT_PATH_MAX_WIDTH,
         }
     }
 }
@@ -254,6 +266,16 @@ fn apply_layout(values: &IniValues, layout: &mut LayoutConfig) {
             }
         }
     }
+
+    if let Some(value) = values.get("layout", "path_max_width") {
+        match value.parse::<i64>() {
+            Ok(value) => layout.path_max_width = value.clamp(8, 160) as usize,
+            Err(_) if debug_enabled() => {
+                eprintln!("clavis-fish-theme: ignoring invalid layout path_max_width={value}");
+            }
+            Err(_) => {}
+        }
+    }
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
@@ -299,7 +321,7 @@ mod tests {
         .expect("colors");
         fs::write(
             directory.join("config.conf"),
-            "[modules]\ngit=false\n[layout]\nleft_margin=99\nright_margin=-4\n[colors]\npath_background=#010203\nconnector=nope\n",
+            "[modules]\ngit=false\n[layout]\nleft_margin=99\nright_margin=-4\npath_max_width=999\n[colors]\npath_background=#010203\nconnector=nope\n",
         )
         .expect("config");
 
@@ -310,6 +332,7 @@ mod tests {
         assert!(!config.modules.git);
         assert_eq!(config.layout.left_margin, 16);
         assert_eq!(config.layout.right_margin, 0);
+        assert_eq!(config.layout.path_max_width, 160);
 
         fs::remove_dir_all(directory).expect("cleanup");
     }
@@ -317,8 +340,21 @@ mod tests {
     #[test]
     fn missing_files_do_not_create_configuration() {
         let directory = temporary_directory();
-        let _ = load_from_directory(&directory);
+        let config = load_from_directory(&directory);
+        assert_eq!(config.layout.path_max_width, 40);
         assert_eq!(fs::read_dir(&directory).expect("directory").count(), 0);
+        fs::remove_dir_all(directory).expect("cleanup");
+    }
+
+    #[test]
+    fn invalid_path_width_keeps_the_builtin_default() {
+        let directory = temporary_directory();
+        fs::write(
+            directory.join("config.conf"),
+            "[layout]\npath_max_width=wide\n",
+        )
+        .expect("config");
+        assert_eq!(load_from_directory(&directory).layout.path_max_width, 40);
         fs::remove_dir_all(directory).expect("cleanup");
     }
 

@@ -114,6 +114,7 @@ time=true
 [layout]
 left_margin=0
 right_margin=0
+path_max_width=40
 
 [colors]
 # Optional user overrides:
@@ -124,6 +125,11 @@ right_margin=0
 `left_margin` and `right_margin` are terminal character cells, default to zero,
 and are clamped to `0..=16`. They apply to both the ordinary and transient
 prompt. They are not terminal emulator window padding.
+
+`path_max_width` limits the complete path capsule in terminal cells, including
+its half-circles and directory icon. It defaults to `40` and is clamped to
+`8..=160`; long paths first drop parent components and then truncate a single
+long directory name on a Unicode grapheme boundary with `…`.
 
 Color precedence is strict:
 
@@ -190,25 +196,28 @@ The theme itself does not run Matugen and does not create the destination.
 The ordinary `fish_prompt` makes one Rust renderer call and receives:
 
 ```text
-[duration][path][git]                 [language][time]
- command
+
+╭─ [duration] 󰜥 [path] 󰜥 [git]       [language] 󰜥 [time]
+╰─  command
 ```
 
-The left and right module order is fixed. Connectors are generated only
-between visible modules, and the complete `fish_right_prompt` is empty in the
-ordinary state because Fish cannot place a right prompt on the first line of a
-multiline prompt.
+The leading blank line separates command history/output from the next full
+prompt. The left and right module order is fixed. The folded frame and spaced
+wave connectors retain the original Clavis visual structure; connectors are
+generated only between visible modules. The complete `fish_right_prompt` is
+empty in the ordinary state because Fish cannot place a right prompt on the
+first line of a multiline prompt.
 
-The second line arrow includes one trailing command-input separator space.
+The second line triangle includes one trailing command-input separator space.
 Success uses `arrow`; a failed previous command uses only
-`error_foreground` for the transparent arrow. Duration and time retain their
+`error_foreground` for the transparent triangle. Duration and time retain their
 normal capsule colors regardless of status.
 
 Fish 4.1's native final rendering calls the same functions with
 `--final-rendering`:
 
 ```text
-fish_prompt --final-rendering       -> left arrow only
+fish_prompt --final-rendering       -> historical `` only
 fish_right_prompt --final-rendering -> transient time
 ```
 
@@ -244,15 +253,17 @@ are never left behind by a hidden module.
   command. Formatting is `ms`, one-decimal seconds, compact minutes, and
   compact hours.
 - Path uses the Fish process current directory and `$HOME` (shown as `~`), with
-  the original Clavis directory icons and bounded Unicode-safe shortening. It
-  does not run `pwd`.
+  the original Clavis directory icons, a configurable 40-cell default cap, and
+  bounded Unicode-safe shortening. It does not run `pwd`.
 - Git first looks for `.git` metadata in ancestors, then makes one
   `git status --porcelain=v2 --branch` call with a 200ms timeout. It never does
   network work, reads remotes, or launches a second Git command for operation
   labels. A timeout/error hides Git.
-- Language detection checks at most eight ancestor directories and 256 entries
-  per directory, stopping at the primary match. It uses the original Clavis
-  language icon inventory and never starts a compiler/interpreter.
+- Language detection finds the nearest Git/project root and scans it without
+  following symlinked directories. It is bounded to eight levels, 2,048
+  entries, and 10ms, skips common generated/vendor directories, and displays
+  at most the three most-used detected languages. It never starts a
+  compiler/interpreter.
 - Configuration is two small direct reads. There is no daemon, socket, cache
   service, or per-module Rust process.
 

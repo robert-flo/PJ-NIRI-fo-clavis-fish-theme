@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::modules::RenderedModules;
 use crate::prompt::PromptState;
-use crate::segment::{arrow, connector, Segment};
+use crate::segment::{arrow, connector, prompt_end, prompt_start, transient_arrow, Segment};
 
 struct Joined {
     rendered: String,
@@ -22,6 +22,7 @@ struct Selection {
 pub fn render_full(config: &Config, state: &PromptState, columns: usize) -> String {
     let modules = crate::modules::render(config, state);
     let connector = connector(config.colors.connector);
+    let prompt_start = prompt_start(config.colors.connector);
     let mut selection = Selection {
         show_duration: modules.duration.is_some(),
         show_path: !modules.path.is_empty(),
@@ -33,7 +34,14 @@ pub fn render_full(config: &Config, state: &PromptState, columns: usize) -> Stri
     };
 
     loop {
-        if fits(config, columns, &modules, &selection, &connector) {
+        if fits(
+            config,
+            columns,
+            &modules,
+            &selection,
+            &connector,
+            &prompt_start,
+        ) {
             break;
         }
 
@@ -58,7 +66,7 @@ pub fn render_full(config: &Config, state: &PromptState, columns: usize) -> Stri
     }
 
     let (left, right) = joined_sides(&modules, &selection, &connector);
-    let first_line = first_line(config, columns, &left, &right);
+    let first_line = first_line(config, columns, &left, &right, &prompt_start);
     let arrow_color = if state.failed() {
         // A failed command changes only the arrow foreground. It does not
         // recolour duration, Git, or time capsules.
@@ -67,10 +75,17 @@ pub fn render_full(config: &Config, state: &PromptState, columns: usize) -> Stri
         config.colors.arrow
     };
     let arrow_segment = arrow(arrow_color);
+    let prompt_end = prompt_end(config.colors.connector);
     let left_margin = effective_margins(config, columns).0;
+    let safe_width = columns.max(1).saturating_sub(1);
+    if left_margin + prompt_end.visible_width + arrow_segment.visible_width > safe_width {
+        let arrow_margin = left_margin.min(safe_width.saturating_sub(arrow_segment.visible_width));
+        return format!("\n{}{}", " ".repeat(arrow_margin), arrow_segment.rendered);
+    }
     format!(
-        "{first_line}\n{}{}",
+        "\n{first_line}\n{}{}{}",
         " ".repeat(left_margin),
+        prompt_end.rendered,
         arrow_segment.rendered
     )
 }
@@ -82,7 +97,7 @@ pub fn render_transient_left(config: &Config, state: &PromptState, columns: usiz
     } else {
         config.colors.arrow
     };
-    let arrow_segment = arrow(color);
+    let arrow_segment = transient_arrow(color);
     format!("{}{}", " ".repeat(left_margin), arrow_segment.rendered)
 }
 
@@ -152,16 +167,24 @@ fn fits(
     modules: &RenderedModules,
     selection: &Selection,
     connector: &Segment,
+    prompt_start: &Segment,
 ) -> bool {
     let (left, right) = joined_sides(modules, selection, connector);
     let (left_margin, right_margin) = effective_margins(config, columns);
     let safe_width = columns.max(1).saturating_sub(1);
-    left_margin + right_margin + left.width + right.width <= safe_width
+    left_margin + right_margin + prompt_start.visible_width + left.width + right.width <= safe_width
 }
 
-fn first_line(config: &Config, columns: usize, left: &Joined, right: &Joined) -> String {
+fn first_line(
+    config: &Config,
+    columns: usize,
+    left: &Joined,
+    right: &Joined,
+    prompt_start: &Segment,
+) -> String {
     let (left_margin, right_margin) = effective_margins(config, columns);
     let mut result = " ".repeat(left_margin);
+    result.push_str(&prompt_start.rendered);
     result.push_str(&left.rendered);
 
     // A fill is meaningful only when there is a right-side module. Without a
@@ -169,7 +192,8 @@ fn first_line(config: &Config, columns: usize, left: &Joined, right: &Joined) ->
     // autowrap at the last column.
     if right.width > 0 {
         let safe_width = columns.max(1).saturating_sub(1);
-        let occupied = left_margin + right_margin + left.width + right.width;
+        let occupied =
+            left_margin + right_margin + prompt_start.visible_width + left.width + right.width;
         let fill = safe_width.saturating_sub(occupied);
         result.push_str(&" ".repeat(fill));
         result.push_str(&right.rendered);
@@ -191,7 +215,7 @@ fn effective_margins(config: &Config, columns: usize) -> (usize, usize) {
 #[cfg(test)]
 mod tests {
     use super::{first_line, join};
-    use crate::segment::Segment;
+    use crate::segment::{prompt_start, Segment};
     use crate::width::visible_width;
 
     #[test]
@@ -224,13 +248,14 @@ mod tests {
             width: 5,
         };
         let config = crate::config::Config::default();
-        let line = first_line(&config, 20, &left, &right);
+        let start = prompt_start(config.colors.connector);
+        let line = first_line(&config, 20, &left, &right, &start);
         assert!(visible_width(&line) < 20);
         assert_eq!(visible_width(&line), 19);
     }
 
     #[test]
-    fn prompt_snapshots_stay_two_lines_at_requested_widths() {
+    fn prompt_snapshots_keep_a_spacer_and_two_visual_lines() {
         let config = crate::config::Config::default();
         let state = crate::prompt::PromptState {
             status: 0,
@@ -241,17 +266,21 @@ mod tests {
         for columns in [30, 40, 60, 80, 120, 160] {
             let output = super::render_full(&config, &state, columns);
             let lines: Vec<&str> = output.split('\n').collect();
-            assert_eq!(lines.len(), 2, "unexpected line count at {columns}");
+            assert_eq!(lines.len(), 3, "unexpected line count at {columns}");
+            assert!(lines[0].is_empty(), "missing spacer line at {columns}");
             assert!(
-                visible_width(lines[0]) < columns,
+                visible_width(lines[1]) < columns,
                 "first line can autowrap at {columns}: {}",
-                visible_width(lines[0])
+                visible_width(lines[1])
             );
             assert_eq!(
-                lines[0].matches('').count(),
-                lines[0].matches('').count(),
+                lines[1].matches('').count(),
+                lines[1].matches('').count(),
                 "unbalanced capsule at {columns}"
             );
+            assert!(lines[1].contains("╭─ "));
+            assert!(lines[2].contains("╰─ "));
+            assert!(lines[2].contains(" "));
         }
     }
 }

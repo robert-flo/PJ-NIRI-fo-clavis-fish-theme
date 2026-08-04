@@ -1,6 +1,7 @@
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn binary() -> &'static str {
@@ -66,7 +67,15 @@ fn config_layers_reload_without_creating_files() {
         "colors.conf field survives"
     );
     assert!(!output.contains(" "), "disabled time is not rendered");
-    assert_eq!(output.matches('\n').count(), 1, "full prompt has two lines");
+    assert_eq!(
+        output.matches('\n').count(),
+        2,
+        "full prompt has a spacer plus two visual lines"
+    );
+    assert!(output.starts_with('\n'));
+    assert!(output.contains("╭─ "));
+    assert!(output.contains("╰─ "));
+    assert!(output.contains(" "));
 
     fs::write(
         theme_dir.join("colors.conf"),
@@ -112,4 +121,82 @@ fn transient_targets_keep_their_separate_contracts() {
     let right_output = String::from_utf8(right.stdout).expect("right utf8");
     assert!(right_output.contains(" "));
     assert!(right_output.contains(""));
+}
+
+#[test]
+fn init_preserves_the_real_binary_path_in_fish() {
+    let root = temporary_directory();
+    let bin_dir = root
+        .join("My Tools")
+        .join("it's-tools")
+        .join("$tools")
+        .join("$(not-a-command)")
+        .join(".cargo/bin");
+    fs::create_dir_all(&bin_dir).expect("binary directory");
+    let installed_binary = bin_dir.join("clavis-fish-theme");
+    fs::copy(binary(), &installed_binary).expect("copy test binary");
+
+    let init = Command::new(&installed_binary)
+        .args(["init", "fish"])
+        .output()
+        .expect("init renderer");
+    assert!(init.status.success());
+    let script = String::from_utf8(init.stdout).expect("init script utf8");
+    let expected_path = installed_binary.to_string_lossy();
+    assert!(script.contains("set -g __clavis_fish_theme_binary '/tmp/"));
+    assert!(script.contains("it'\\''s-tools"));
+    assert!(script.contains("/$tools/$(not-a-command)/.cargo/bin/clavis-fish-theme'"));
+    assert!(!script.contains("_2E"));
+    assert!(!script.contains("_20"));
+
+    let mut syntax = Command::new("fish")
+        .args(["--no-config", "-n"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("fish syntax check");
+    syntax
+        .stdin
+        .take()
+        .expect("fish stdin")
+        .write_all(script.as_bytes())
+        .expect("write init script");
+    let syntax_output = syntax.wait_with_output().expect("fish syntax result");
+    assert!(
+        syntax_output.status.success(),
+        "generated init script is invalid: {}",
+        String::from_utf8_lossy(&syntax_output.stderr)
+    );
+
+    let fish_code = concat!(
+        "clavis-fish-theme init fish | source; ",
+        "clavis-fish-theme init fish | source; ",
+        "printf '%s\\n' \"$__clavis_fish_theme_binary\"; ",
+        "\"$__clavis_fish_theme_binary\" --version"
+    );
+    let fish = Command::new("fish")
+        .args(["--no-config", "--private", "--interactive", "-c", fish_code])
+        .env("HOME", root.join("home"))
+        .env("XDG_CONFIG_HOME", root.join("config"))
+        .env("TERM", "dumb")
+        .env("PATH", format!("{}:/usr/bin:/bin", bin_dir.display()))
+        .output()
+        .expect("fish integration");
+    assert!(
+        fish.status.success(),
+        "Fish could not source init: {}",
+        String::from_utf8_lossy(&fish.stderr)
+    );
+    let fish_stdout = String::from_utf8_lossy(&fish.stdout);
+    assert!(
+        fish_stdout.lines().any(|line| line == expected_path),
+        "Fish variable did not preserve path: {fish_stdout:?}"
+    );
+    assert!(
+        fish_stdout.contains("clavis-fish-theme 0.1.0"),
+        "Fish could not execute the resolved binary: {fish_stdout:?}"
+    );
+
+    fs::remove_dir_all(root).expect("cleanup");
 }

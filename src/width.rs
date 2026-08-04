@@ -95,9 +95,23 @@ pub fn truncate_visible(text: &str, max_width: usize) -> String {
     result
 }
 
+/// Truncate plain text at a grapheme boundary and reserve one cell for an
+/// ellipsis when truncation occurs.
+pub fn truncate_visible_with_ellipsis(text: &str, max_width: usize) -> String {
+    if visible_width(text) <= max_width {
+        return text.to_owned();
+    }
+    if max_width == 0 {
+        return String::new();
+    }
+    let mut result = truncate_visible(text, max_width.saturating_sub(1));
+    result.push('…');
+    result
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{truncate_visible, visible_width};
+    use super::{truncate_visible, truncate_visible_with_ellipsis, visible_width};
 
     #[test]
     fn measures_ansi_and_unicode_cells() {
@@ -114,5 +128,7 @@ mod tests {
         assert_eq!(truncate_visible("中文路径", 5), "中文");
         assert_eq!(truncate_visible("e\u{301}x", 1), "e\u{301}");
         assert_eq!(truncate_visible("abcdef", 6), "abcdef");
+        assert_eq!(truncate_visible_with_ellipsis("abcdef", 4), "abc…");
+        assert_eq!(truncate_visible_with_ellipsis("中文路径", 4), "中…");
     }
 }

@@ -1,5 +1,6 @@
 use crate::config::ColorPair;
 use crate::segment::{capsule, Segment};
+use crate::width::{truncate_visible_with_ellipsis, visible_width};
 use std::env;
 use std::path::{Component, Path, PathBuf};
 
@@ -10,8 +11,12 @@ struct PathInfo {
     absolute: bool,
 }
 
-pub fn render(colors: ColorPair) -> Vec<Segment> {
+pub fn render(colors: ColorPair, max_width: usize) -> Vec<Segment> {
     let info = path_info();
+    render_info(colors, max_width, &info)
+}
+
+fn render_info(colors: ColorPair, max_width: usize, info: &PathInfo) -> Vec<Segment> {
     let mut contents = Vec::new();
 
     let full = info.components_text(None);
@@ -27,7 +32,16 @@ pub fn render(colors: ColorPair) -> Vec<Segment> {
     }
 
     let mut result = Vec::new();
-    for text in contents {
+    let content_overhead = visible_width(info.icon) + 1;
+    let text_budget = max_width.saturating_sub(2 + content_overhead);
+    let content_count = contents.len();
+    for (index, mut text) in contents.into_iter().enumerate() {
+        if !text.is_empty() && visible_width(&text) > text_budget {
+            if index + 1 < content_count {
+                continue;
+            }
+            text = truncate_visible_with_ellipsis(&text, text_budget);
+        }
         let content = if text.is_empty() {
             info.icon.to_owned()
         } else {
@@ -128,6 +142,8 @@ fn components_text(components: &[String], tail_count: Option<usize>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{components_text, PathInfo};
+    use crate::config::{ColorPair, Config};
+    use crate::width::visible_width;
 
     #[test]
     fn shortens_middle_components_without_byte_cutting() {
@@ -150,5 +166,27 @@ mod tests {
             absolute: false,
         };
         assert_eq!(info.components_text(None), "~/Projects/clavis");
+    }
+
+    #[test]
+    fn every_rendered_variant_respects_the_configured_width() {
+        let info = PathInfo {
+            icon: "",
+            components: vec!["非常长的目录名称用于测试字符宽度限制".to_owned()],
+            home: false,
+            absolute: true,
+        };
+        let colors: ColorPair = Config::default().colors.path;
+        let rendered = super::render_info(colors, 20, &info);
+        assert!(!rendered.is_empty());
+        assert!(rendered.iter().all(|segment| segment.visible_width <= 20));
+        assert!(rendered
+            .last()
+            .expect("shortest path")
+            .rendered
+            .contains('…'));
+        assert!(rendered
+            .iter()
+            .all(|segment| { visible_width(&segment.rendered) == segment.visible_width }));
     }
 }

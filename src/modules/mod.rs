@@ -29,7 +29,7 @@ pub fn render(config: &Config, state: &PromptState) -> RenderedModules {
             .then(|| duration::render(config.colors.duration, state))
             .flatten(),
         path: if config.modules.path {
-            path::render(config.colors.path)
+            path::render(config.colors.path, config.layout.path_max_width)
         } else {
             Vec::new()
         },

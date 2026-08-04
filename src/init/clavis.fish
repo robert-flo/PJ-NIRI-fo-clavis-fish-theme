@@ -27,10 +27,10 @@ if not __clavis_fish_theme_version_at_least 4.1
     return
 end
 
-# Decode a generated Fish variable-style literal into the exact executable
-# path resolved by the init process. No user-specific install path is
-# hard-coded here.
-set -g __clavis_fish_theme_binary (string unescape --style=var -- '__CLAVIS_FISH_THEME_BINARY__')
+# The placeholder is replaced with one Fish-quoted literal by Rust. Do not
+# use `string escape --style=var` here: that format is for variable names and
+# would turn path punctuation into hexadecimal identifier escapes.
+set -g __clavis_fish_theme_binary __CLAVIS_FISH_THEME_BINARY__
 set -g fish_transient_prompt 1
 
 # Remove only this package's event handler before re-registering it. Repeated

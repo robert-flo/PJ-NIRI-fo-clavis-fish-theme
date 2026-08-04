@@ -1,49 +1,72 @@
 use std::env;
 use std::io;
 
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
-
 const BINARY_PLACEHOLDER: &str = "__CLAVIS_FISH_THEME_BINARY__";
 
 pub fn print_fish() -> io::Result<()> {
     let executable = env::current_exe()?;
-    #[cfg(unix)]
-    let path_bytes = executable.as_os_str().as_bytes();
-    #[cfg(not(unix))]
-    let path_bytes = executable.to_string_lossy().as_bytes();
-    let encoded = fish_variable_escape(path_bytes);
-    let script = include_str!("init/clavis.fish").replace(BINARY_PLACEHOLDER, &encoded);
+    let executable = executable.to_str().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "executable path is not valid UTF-8 and cannot be embedded in Fish source",
+        )
+    })?;
+    let quoted_path = fish_quote(executable);
+    let script = include_str!("init/clavis.fish").replace(BINARY_PLACEHOLDER, &quoted_path);
     print!("{script}");
     Ok(())
 }
 
-/// Encode a path using Fish's `string escape --style=var` convention. The
-/// generated script decodes it with the Fish builtin, so spaces, quotes,
-/// dollar signs, parentheses, and non-UTF-8 bytes cannot become code.
-fn fish_variable_escape(bytes: &[u8]) -> String {
-    let mut result = String::new();
-    for byte in bytes {
-        if byte.is_ascii_alphanumeric() {
-            result.push(*byte as char);
-        } else if *byte == b'_' {
-            result.push_str("__");
+/// Quote a path as a literal Fish string.
+///
+/// This is deliberately string quoting rather than Fish's `var` escaping.
+/// The latter is intended for encoding variable names and turns characters
+/// such as `.` and `/` into `_2E` and `_2F`. A single-quoted literal keeps all
+/// path characters literal; an apostrophe is represented by closing the
+/// quote, escaping the apostrophe, and opening it again.
+fn fish_quote(value: &str) -> String {
+    let mut result = String::with_capacity(value.len() + 2);
+    result.push('\'');
+    for character in value.chars() {
+        if character == '\'' {
+            result.push_str("'\\''");
         } else {
-            result.push('_');
-            result.push_str(&format!("{byte:02X}"));
-            result.push('_');
+            result.push(character);
         }
     }
+    result.push('\'');
     result
 }
 
 #[cfg(test)]
 mod tests {
-    use super::fish_variable_escape;
+    use super::fish_quote;
 
     #[test]
-    fn uses_fish_variable_escaping_for_paths() {
-        assert_eq!(fish_variable_escape(b"/tmp/a b_1"), "_2F_tmp_2F_a_20_b__1");
-        assert!(!fish_variable_escape(b"a'b$(c)").contains('\''));
+    fn keeps_path_punctuation_literal() {
+        let quoted = fish_quote("/home/user/.cargo/bin/clavis-fish-theme");
+        assert_eq!(quoted, "'/home/user/.cargo/bin/clavis-fish-theme'");
+        assert!(!quoted.contains("_2E"));
+        assert!(!quoted.contains("_2F"));
+        assert_eq!(
+            fish_quote("/home/user/.local/bin/clavis-fish-theme"),
+            "'/home/user/.local/bin/clavis-fish-theme'"
+        );
+    }
+
+    #[test]
+    fn quotes_shell_special_characters_without_encoding_them() {
+        assert_eq!(
+            fish_quote("/tmp/My Tools/bin/clavis-fish-theme"),
+            "'/tmp/My Tools/bin/clavis-fish-theme'"
+        );
+        assert_eq!(
+            fish_quote("/tmp/it's-tools/bin/clavis-fish-theme"),
+            "'/tmp/it'\\''s-tools/bin/clavis-fish-theme'"
+        );
+        assert_eq!(
+            fish_quote("/tmp/$tools/$(not-a-command)/`literal`"),
+            "'/tmp/$tools/$(not-a-command)/`literal`'"
+        );
     }
 }

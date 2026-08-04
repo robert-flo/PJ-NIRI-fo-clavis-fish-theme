@@ -5,8 +5,11 @@ use crate::width::visible_width;
 pub const RESET: &str = "\x1b[0m";
 pub const LEFT_CAP: &str = "";
 pub const RIGHT_CAP: &str = "";
-pub const CONNECTOR_ICON: &str = "󰜥";
-pub const ARROW_ICON: &str = "";
+pub const CONNECTOR_ICON: &str = " 󰜥 ";
+pub const PROMPT_START: &str = "╭─ ";
+pub const PROMPT_END: &str = "╰─ ";
+pub const ARROW_ICON: &str = "";
+pub const TRANSIENT_ARROW_ICON: &str = "";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Segment {
@@ -50,9 +53,21 @@ pub fn arrow(color: Color) -> Segment {
     styled(color, &format!("{ARROW_ICON} "))
 }
 
+pub fn transient_arrow(color: Color) -> Segment {
+    styled(color, &format!("{TRANSIENT_ARROW_ICON} "))
+}
+
+pub fn prompt_start(color: Color) -> Segment {
+    styled(color, PROMPT_START)
+}
+
+pub fn prompt_end(color: Color) -> Segment {
+    styled(color, PROMPT_END)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{capsule, ColorPair};
+    use super::{capsule, connector, ColorPair, CONNECTOR_ICON};
     use crate::color::Color;
 
     #[test]
@@ -67,5 +82,13 @@ mod tests {
         assert_eq!(segment.visible_width, 1 + 7 + 1);
         assert!(!segment.rendered.contains(" "));
         assert!(!segment.rendered.contains(" "));
+    }
+
+    #[test]
+    fn wave_connector_has_one_cell_of_space_on_each_side() {
+        let segment = connector(Color::rgb(1, 2, 3));
+        assert_eq!(CONNECTOR_ICON, " 󰜥 ");
+        assert_eq!(segment.visible_width, 3);
+        assert!(segment.rendered.contains(CONNECTOR_ICON));
     }
 }
