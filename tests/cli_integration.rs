@@ -120,7 +120,10 @@ fn transient_targets_keep_their_separate_contracts() {
         .expect("right renderer");
     let right_output = String::from_utf8(right.stdout).expect("right utf8");
     assert!(right_output.contains(" "));
-    assert!(right_output.contains(""));
+    assert!(!right_output.contains(""));
+    assert!(!right_output.contains(""));
+    assert!(!right_output.contains("48;2;64;71;83m"));
+    assert!(right_output.contains("38;2;220;227;242m"));
 }
 
 #[test]

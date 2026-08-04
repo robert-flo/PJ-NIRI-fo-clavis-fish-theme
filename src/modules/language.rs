@@ -189,7 +189,7 @@ fn render_detected(colors: ColorPair, languages: &[&Language]) -> Segment {
         .map(|language| language.icon)
         .collect::<Vec<_>>()
         .join(" ");
-    capsule(colors, &format!(" {icons} "))
+    capsule(colors, &icons)
 }
 
 fn detect() -> Option<Vec<&'static Language>> {
@@ -327,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn centers_up_to_three_icons_with_explicit_spacing() {
+    fn renders_up_to_three_icons_without_outer_padding() {
         let rust = LANGUAGES
             .iter()
             .find(|language| language.name == "Rust")
@@ -340,8 +340,25 @@ mod tests {
             .iter()
             .find(|language| language.name == "Shell")
             .expect("Shell");
-        let segment = render_detected(Config::default().colors.language, &[rust, python, shell]);
-        assert!(segment.rendered.contains("  󰌠  "));
+        let colors = Config::default().colors.language;
+        let one = render_detected(colors, &[rust]);
+        let two = render_detected(colors, &[rust, python]);
+        let three = render_detected(colors, &[rust, python, shell]);
+
+        assert!(one.rendered.contains(""));
+        assert!(!one.rendered.contains(" "));
+        assert!(!one.rendered.contains(" "));
+        assert_eq!(one.visible_width, 3);
+
+        assert!(two.rendered.contains(" 󰌠"));
+        assert!(!two.rendered.contains(" "));
+        assert!(!two.rendered.contains("󰌠 "));
+        assert_eq!(two.visible_width, 5);
+
+        assert!(three.rendered.contains(" 󰌠 "));
+        assert!(!three.rendered.contains(" "));
+        assert!(!three.rendered.contains(" "));
+        assert_eq!(three.visible_width, 7);
     }
 
     #[test]
