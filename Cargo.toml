@@ -1,0 +1,22 @@
+[package]
+name = "clavis-fish-theme"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "A Rust two-line capsule prompt for Fish 4.1+"
+repository = "https://github.com/Archirithm/clavis-fish-theme"
+license = "MIT"
+readme = "README.md"
+
+[[bin]]
+name = "clavis-fish-theme"
+path = "src/main.rs"
+
+[dependencies]
+jiff = "0.2.35"
+unicode-segmentation = "1.13.3"
+unicode-width = "0.2.2"
+
+[profile.release]
+lto = "thin"
+strip = true
