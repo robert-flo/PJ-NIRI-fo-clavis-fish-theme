@@ -105,7 +105,7 @@ pub fn render_transient_right(config: &Config, columns: usize) -> String {
     if !config.modules.time {
         return String::new();
     }
-    let time = crate::modules::time::render(config.colors.time);
+    let time = crate::modules::time::render_plain(config.colors.time.foreground);
     let right_margin = effective_margins(config, columns).1;
     format!("{}{}", time.rendered, " ".repeat(right_margin))
 }
@@ -215,6 +215,7 @@ fn effective_margins(config: &Config, columns: usize) -> (usize, usize) {
 #[cfg(test)]
 mod tests {
     use super::{first_line, join};
+    use crate::config::Config;
     use crate::segment::{prompt_start, Segment};
     use crate::width::visible_width;
 
@@ -282,5 +283,18 @@ mod tests {
             assert!(lines[2].contains("╰─ "));
             assert!(lines[2].contains(" "));
         }
+    }
+
+    #[test]
+    fn transient_right_time_has_no_capsule_and_keeps_margin() {
+        let mut config = Config::default();
+        config.layout.right_margin = 3;
+        let rendered = super::render_transient_right(&config, 80);
+        assert!(!rendered.contains(""));
+        assert!(!rendered.contains(""));
+        assert!(!rendered.contains("48;2;64;71;83m"));
+        assert!(rendered.contains("38;2;220;227;242m"));
+        assert_eq!(crate::width::visible_width(&rendered), 13);
+        assert!(!rendered.contains("38;2;255;218;214m"));
     }
 }
