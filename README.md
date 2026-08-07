@@ -1,5 +1,13 @@
 # clavis-fish-theme
 
+
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/StatIndet/picture/main/fish-theme.png" >
+</p>
+
+
+
 `clavis-fish-theme` is a Rust two-line capsule prompt for Fish 4.1+. It keeps
 the visual language of the original Clavis prompt—Nerd Font half-capsules,
 Powerline separators, duration/path/Git/language/time modules—and rebuilds the
